@@ -4,7 +4,9 @@ A really dumb best/worst case execution time estimation tool.
 The tool uses LLVM's cost model to give estimates of best and worst case execution time for very, very simple cases. 
 You pass it a list of bitcode files and it will compute b/wcet for every function in each module.
 
-The huge, enormous caveat is that it only works for DAG like code which doesn't call other functions! That, right there, should probably put you off. I needed it for a particular task.
+The huge, enormous caveat is that it only works for DAG like code which doesn't call other functions! That, right there, should probably put you off. 
+Additionally, the estimate works by just asking LLVM for the cost of each instruction and summing the best and worst case paths through the CFG. This ignores all scheduling, cache effects, etc.
+These are the reasons it is a 'dumb' tool. I needed it for a particular task.
 
 ## Building
 You need llvm installed (v10).
