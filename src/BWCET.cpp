@@ -15,6 +15,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <queue>
+#include <cassert>
 
 using namespace llvm;
 using namespace std;
@@ -151,10 +152,22 @@ MinMax getCost(const Function& f) {
     // Push costs around the DAG (BTW, this better be a DAG!)
     MinMax best;
     // Simple worklist from the entry.
+    unordered_map<const BasicBlock*, bool> isQueued;
     queue<const BasicBlock*> q;
     q.push(&entry);
+    isQueued[&entry] = true;
+
+    cout << "Starting " << bbs.size() << "\n";
+    int pcount = 1000000;
     while(!q.empty()) {
+        if(pcount-- == 0) {
+            cout << "q.size " << q.size() << " in.size " << in.size() << endl;
+            pcount = 1000000;
+        }
+
         const auto* bb = q.front();
+        assert(isQueued[bb]);
+        isQueued[bb] = false;
         q.pop();
         
         // Xfer is adding cost
@@ -163,7 +176,12 @@ MinMax getCost(const Function& f) {
         
         // If this is better than in for any successor, update and add to queue
         for(const auto* succ: successors(bb)) {
-            if(in[succ].merge(out)) q.push(succ);
+            if(in[succ].merge(out)) {
+                if(!isQueued[succ]) {
+                    q.push(succ);
+                    isQueued[succ] = true;
+                }
+            }
         }
     }
     return best;
