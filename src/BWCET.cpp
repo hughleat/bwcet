@@ -15,6 +15,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <queue>
+#include <limits>
 #include <cassert>
 
 using namespace llvm;
@@ -87,107 +88,6 @@ cl::alias costKindA(
 );
 
 //------------------------------------------------------------------------------
-// A pair of min max. 
-//------------------------------------------------------------------------------
-struct MinMax {
-    size_t min;
-    size_t max;
-    MinMax(): min(SIZE_MAX), max(0) {}
-    MinMax(size_t v): min(v), max(v) {}
-    MinMax(size_t min, size_t max): min(min), max(max) {}
-    // If elements of other are better, adopt them.
-    // Return true if improved (i.e. min reduced or max increased)
-    bool merge(const MinMax& other) {
-        bool better = false;
-        if(other.min < min) {
-            min = other.min;
-            better = true;
-        }
-        if(other.max > max) {
-            max = other.max;
-            better = true;
-        }
-        return true;
-    }
-};
-// Add two MinMax. 
-MinMax operator+(const MinMax& a, const MinMax& b) {
-    return MinMax(a.min + b.min, a.max + b.max);
-}
-// Print MinMax
-ostream& operator<<(ostream &os, const MinMax& mm) {
-    os << "{min:" << mm.min << ",max:" << mm.max << "}";
-    return os;
-}
-
-//------------------------------------------------------------------------------
-// Get min and max cost of functions and basic blocks
-//------------------------------------------------------------------------------
-TargetIRAnalysis tira;
-unique_ptr<TargetTransformInfoWrapperPass> ttiwp((TargetTransformInfoWrapperPass*)createTargetTransformInfoWrapperPass(tira));
-
-MinMax getCost(const BasicBlock& bb, const TargetTransformInfo& tti) {
-    int cost = 0;
-    for(const auto& insn: bb) {
-        cost += tti.getInstructionCost(&insn, costKind);
-    }
-    return cost;
-}
-// Get the cost of a function. The function better have basic blocks and the CFG had better be a DAG.
-// If not a DAG, will never finish.
-// Algorithm is simple dataflow like.
-MinMax getCost(const Function& f) {
-    auto& tti = ttiwp->getTTI(f);
-    
-    // Precompute BB costs.
-    const auto& bbs = f.getBasicBlockList();
-    unordered_map<const BasicBlock*, MinMax> bbCost;
-    for(const auto& bb: bbs) bbCost[&bb] = getCost(bb, tti);
-
-    // Costs into each BB.
-    unordered_map<const BasicBlock*, MinMax> in;
-    const auto& entry = f.getEntryBlock();
-    in[&entry] = MinMax(0);
-    
-    // Push costs around the DAG (BTW, this better be a DAG!)
-    MinMax best;
-    // Simple worklist from the entry.
-    unordered_map<const BasicBlock*, bool> isQueued;
-    queue<const BasicBlock*> q;
-    q.push(&entry);
-    isQueued[&entry] = true;
-
-    cout << "Starting " << bbs.size() << "\n";
-    int pcount = 1000000;
-    while(!q.empty()) {
-        if(pcount-- == 0) {
-            cout << "q.size " << q.size() << " in.size " << in.size() << endl;
-            pcount = 1000000;
-        }
-
-        const auto* bb = q.front();
-        assert(isQueued[bb]);
-        isQueued[bb] = false;
-        q.pop();
-        
-        // Xfer is adding cost
-        MinMax out = in[bb] + bbCost[bb];
-        best.merge(out);
-        
-        // If this is better than in for any successor, update and add to queue
-        for(const auto* succ: successors(bb)) {
-            if(in[succ].merge(out)) {
-                if(!isQueued[succ]) {
-                    q.push(succ);
-                    isQueued[succ] = true;
-                }
-            }
-        }
-    }
-    return best;
-}
-
-//------------------------------------------------------------------------------
 // Determine if CFG is a DAG.
 //------------------------------------------------------------------------------
 // Colour for DFS
@@ -213,27 +113,168 @@ bool isDAG(const Function& f) {
 }
 
 //------------------------------------------------------------------------------
+// Get min and max cost of functions and basic blocks
+//------------------------------------------------------------------------------
+TargetIRAnalysis tira;
+unique_ptr<TargetTransformInfoWrapperPass> ttiwp((TargetTransformInfoWrapperPass*)createTargetTransformInfoWrapperPass(tira));
+using CostT = double;
+
+CostT getCost(const BasicBlock& bb, const TargetTransformInfo& tti) {
+    CostT cost = 0;
+    for(const auto& insn: bb) {
+        cost += tti.getInstructionCost(&insn, costKind);
+    }
+    return cost;
+}
+CostT minCost(const Function& f, unordered_map<const BasicBlock*, CostT> bbCost) {
+    // Cost of best path (path with minimum cost)
+    CostT best = numeric_limits<CostT>::infinity(); 
+    // Map of costs into each vertex
+    unordered_map<const BasicBlock*, CostT> costIn;
+    // Priority queue
+    set<pair<CostT, const BasicBlock*>> q;
+    // Pointers into q - so we can change priority
+    unordered_map<const BasicBlock*, decltype(q.begin())> iter;
+    // Initialise cost
+    for(const BasicBlock& v: f.getBasicBlockList()) costIn[&v] = numeric_limits<CostT>::infinity();
+    auto start = &f.getEntryBlock();
+    costIn[start] = 0;
+    // Push into q (and remember iterator)
+    auto iti = q.insert({costIn[start], start});
+    iter[start] = iti.first;
+    // Do the search
+    while(!q.empty()) {
+        // Pop from the q
+        auto top = q.begin();
+        const BasicBlock* v = top->second;
+        CostT cIn = top->first;
+        q.erase(top);
+        iter.erase(v);
+        assert(cIn == costIn[v]);
+
+        // Get the cost out of this node
+        int cOut = cIn + bbCost[v];
+        // Count the successors as we process them
+        int numSuccs = 0;
+        // Process each successor
+        for(const auto* succ: successors(v)) {
+            numSuccs++;
+            // Update if the cost is better
+            if(cOut < costIn[succ]) {
+                // Set the new cost
+                costIn[succ] = cOut;
+                // Delete from the queue if already in there
+                if(iter.count(succ)) {
+                    auto it = iter[succ];
+                    q.erase(it);
+                }
+                // Insert into the queue (and remember iterator)
+                auto iti = q.insert({cOut, succ});
+                iter[succ] = iti.first;
+            }
+        }
+        // Update best if this is an exit block (no successors) and we have a better cost
+        if(numSuccs == 0 && best > cOut) best = cOut;
+    }
+    return best;
+}
+CostT maxCost(const Function& f, unordered_map<const BasicBlock*, CostT> bbCost) {
+    // Cost of best path (path with minimum cost)
+    CostT best = 0; 
+    // Map of costs into each vertex
+    unordered_map<const BasicBlock*, CostT> costIn;
+    // Priority queue
+    struct RCmp {
+        bool operator()(const pair<CostT, const BasicBlock*>& a, const pair<CostT, const BasicBlock*>& b) const {
+            if(a.first == b.first) return a.second < b.second;
+            return a.first > b.first;
+        }
+    };
+    set<pair<CostT, const BasicBlock*>, RCmp> q;
+    // Pointers into q - so we can change priority
+    unordered_map<const BasicBlock*, decltype(q.begin())> iter;
+    // Initialise cost
+    for(const BasicBlock& v: f.getBasicBlockList()) costIn[&v] = 0;
+    auto start = &f.getEntryBlock();
+    costIn[start] = 0;
+    // Push into q (and remember iterator)
+    auto iti = q.insert({costIn[start], start});
+    iter[start] = iti.first;
+    // Do the search
+    //cout << f.getName().str() << endl;
+    while(!q.empty()) {
+        // Pop from the q
+        auto top = q.begin();
+        const BasicBlock* v = top->second;
+        CostT cIn = top->first;
+        q.erase(top);
+        iter.erase(v);
+        assert(cIn == costIn[v]);
+
+        // Get the cost out of this node
+        int cOut = cIn + bbCost[v];
+        //cout << v << " " << cIn << " " << cOut << endl;
+        // Count the successors as we process them
+        int numSuccs = 0;
+        // Process each successor
+        for(const auto* succ: successors(v)) {
+            numSuccs++;
+            // Update if the cost is better
+            //cout << "   " << cOut << " " << costIn[succ] << " " << succ << endl;
+            if(cOut > costIn[succ]) {
+                // Set the new cost
+                costIn[succ] = cOut;
+                // Delete from the queue if already in there
+                if(iter.count(succ)) {
+                    //cout << "  x\n";
+                    auto it = iter[succ];
+                    q.erase(it);
+                }
+                // Insert into the queue (and remember iterator)
+                auto iti = q.insert({cOut, succ});
+                iter[succ] = iti.first;
+                //cout << "   insert? " << iti.second << endl;
+            }
+        }
+        // Update best if this is an exit block (no successors) and we have a better cost
+        if(numSuccs == 0 && best < cOut) best = cOut;
+        //cout << numSuccs << " " << best << " " << cIn << " " << cOut << " " << q.size() << endl;
+    }
+    return best;
+}
+
+pair<CostT, CostT> getCost(const Function& f) {
+    auto& tti = ttiwp->getTTI(f);
+    
+    // Precompute BB costs.
+    unordered_map<const BasicBlock*, CostT> bbCost;
+    for(const auto& bb: f.getBasicBlockList()) bbCost[&bb] = getCost(bb, tti);
+    
+    if(isDAG(f)) {
+        return {minCost(f, bbCost), maxCost(f, bbCost)};
+    } else {
+        return {minCost(f, bbCost), numeric_limits<CostT>::infinity()};
+    }
+}
+
+//------------------------------------------------------------------------------
 // Visitor functions, called to process the module
 //------------------------------------------------------------------------------
 void visit(const Function& f, ostream& os) {
-    bool dag = isDAG(f);
-    os << boolalpha;
+    auto costs = getCost(f);
     switch(outputFormat) {
         case TXT: {
-            os << "  Function: " << f.getName().str() << " - ";
-            if(dag) os << getCost(f) << "\n";
-            else os << "CFG not a DAG\n";
+            os << "  Function: " << f.getName().str() << " ";
+            os <<    "min=" << costs.first << " ";
+            os <<    "max=" << costs.second << endl;
             break;
         }
         case JSON: {
             os << "{";
             os <<   "\"function\":\"" << f.getName().str() << "\",";
-            os <<   "\"dag\":" << dag;
-            if(dag) {
-                os << ",";
-                MinMax mm = getCost(f);
-                os << "\"min\":" << mm.min << ",";
-                os << "\"max\":" << mm.max;
+            os <<   "\"min\":" << costs.first;
+            if(costs.second != numeric_limits<CostT>::infinity()) {
+                os << ",\"max\":" << costs.second;
             }
             os << "}";
             break;
@@ -241,12 +282,11 @@ void visit(const Function& f, ostream& os) {
         case CSV: {
             os << f.getParent()->getName().str() << ",";
             os << f.getName().str() << ",";
-            os << dag << ",";
-            if(dag) {
-                MinMax mm = getCost(f);
-                os << mm.min << ",";
-                os << mm.max << "\n";
-            } else os << ",\n";
+            os << costs.first << ",";
+            if(costs.second != numeric_limits<CostT>::infinity()) {
+                os << costs.second;
+            }
+            os << "\n";
             break;
         }
     }
