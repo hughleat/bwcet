@@ -4,7 +4,7 @@ LDFLAGS=`llvm-config --ldflags`
 LOADABLEOPTS=-Wl,-flat_namespace -Wl,-undefined,suppress
 
 build/BWCET: src/BWCET.cpp
-	clang $(CXXFLAGS) $(LLVMLIBS) $(LDFLAGS) $(LOADABLEOPTS) src/BWCET.cpp -o build/BWCET
+	clang -O3 -g0 $(CXXFLAGS) $(LLVMLIBS) $(LDFLAGS) $(LOADABLEOPTS) src/BWCET.cpp -o build/BWCET
 
 build/foo-O0.ll: test/foo.c
 	clang -emit-llvm -S -O0 test/foo.c -o build/foo-O0.ll
