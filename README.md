@@ -11,7 +11,19 @@ These are the reasons it is a 'dumb' tool. I needed it for a particular task.
 ## Building
 You need llvm installed (v10).
 
-Just call `make`.
+#### __Step 1:__ Tell `cmake` where LLVM is:
+    export LLVM_DIR=<path to llvm-10 dir>
+#### __Step 2:__ Call `make`
+    make
+This will create a build dir. In there you should find the tool in the `bin` directory, called `bwcet`.
+#### __Step 3:__ (Optional) Run the tests
+Quick tests:
+
+    make tests
+
+Test on a big function compiled with -O3 (it takes LLVM ages to do this, so it is separated from the rest of the tests).
+
+    make test-large-O3
 
 ## Use
 The command line options are:

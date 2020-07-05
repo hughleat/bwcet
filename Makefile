@@ -1,35 +1,38 @@
-CXXFLAGS=`llvm-config --cxxflags`
-LLVMLIBS=`llvm-config --libs`
-LDFLAGS=`llvm-config --ldflags`
-LOADABLEOPTS=-Wl,-flat_namespace -Wl,-undefined,suppress
+tool: build/bin/bwcet
 
-build/BWCET: src/BWCET.cpp
-	clang -O3 -g0 $(CXXFLAGS) $(LLVMLIBS) $(LDFLAGS) $(LOADABLEOPTS) src/BWCET.cpp -o build/BWCET
+build/bin/bwcet: src/BWCET.cpp invoke_cmake.sh CMakeLists.txt
+	mkdir -p build
+	cmake -DLT_LLVM_INSTALL_DIR=${LLVM_DIR} -S . -B build
+	(cd build; make)
 
-build/foo-O0.ll: test/foo.c
-	clang -emit-llvm -S -O0 test/foo.c -o build/foo-O0.ll
-build/foo-O3.ll: test/foo.c
-	clang -emit-llvm -S -O3 test/foo.c -o build/foo-O3.ll
-build/large-O0.ll: test/large.c
-	clang -emit-llvm -S -O0 test/large.c -o build/large-O0.ll
-build/large-O3.ll: test/large.c
-	clang -emit-llvm -S -O3 test/large.c -o build/large-O3.ll
+bitcode: build/test/foo-O0.ll build/test/foo-O3.ll build/test/large-O0.ll
 
-bitcode: build/foo-O0.ll build/foo-O3.ll build/large-O0.ll
+build/test/foo-O0.ll: test/foo.c
+	mkdir -p build/test
+	clang -emit-llvm -S -O0 test/foo.c -o build/test/foo-O0.ll
+build/test/foo-O3.ll: test/foo.c
+	mkdir -p build/test
+	clang -emit-llvm -S -O3 test/foo.c -o build/test/foo-O3.ll
+build/test/large-O0.ll: test/large.c
+	mkdir -p build/test
+	clang -emit-llvm -S -O0 test/large.c -o build/test/large-O0.ll
+build/test/large-O3.ll: test/large.c
+	mkdir -p build/test
+	clang -emit-llvm -S -O3 test/large.c -o build/test/large-O3.ll
 
-tests: bitcode build/BWCET
-	build/BWCET --help
-	build/BWCET --help-list-hidden
-	build/BWCET build/foo-O0.ll build/foo-O3.ll build/large-O0.ll
-	build/BWCET build/foo-O0.ll build/foo-O3.ll build/large-O0.ll -o build/tmpout
-	build/BWCET build/foo-O0.ll build/foo-O3.ll build/large-O0.ll -f JSON
-	build/BWCET build/foo-O0.ll build/foo-O3.ll build/large-O0.ll -f CSV
-	build/BWCET build/foo-O0.ll build/foo-O3.ll build/large-O0.ll -k throughput
-	build/BWCET build/foo-O0.ll build/foo-O3.ll build/large-O0.ll -k latency
-	build/BWCET build/foo-O0.ll build/foo-O3.ll build/large-O0.ll -k code-size
+tests: bitcode tool
+	build/bin/bwcet --help
+	build/bin/bwcet --help-list-hidden
+	build/bin/bwcet build/test/foo-O0.ll build/test/foo-O3.ll build/test/large-O0.ll
+	build/bin/bwcet build/test/foo-O0.ll build/test/foo-O3.ll build/test/large-O0.ll -o build/test/tmpout
+	build/bin/bwcet build/test/foo-O0.ll build/test/foo-O3.ll build/test/large-O0.ll -f JSON
+	build/bin/bwcet build/test/foo-O0.ll build/test/foo-O3.ll build/test/large-O0.ll -f CSV
+	build/bin/bwcet build/test/foo-O0.ll build/test/foo-O3.ll build/test/large-O0.ll -k throughput
+	build/bin/bwcet build/test/foo-O0.ll build/test/foo-O3.ll build/test/large-O0.ll -k latency
+	build/bin/bwcet build/test/foo-O0.ll build/test/foo-O3.ll build/test/large-O0.ll -k code-size
 
-test-large-O3: build/large-O3.ll build/BWCET
-	build/BWCET build/large-O3.ll -k code-size
+test-large-O3: build/test/large-O3.ll tool
+	build/BWCET build/test/large-O3.ll -k code-size
 
 clean:
-	rm -f build/*
+	rm -rf build
