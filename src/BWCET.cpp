@@ -128,7 +128,11 @@ CostT getCost(const BasicBlock& bb, const TargetTransformInfo& tti) {
 }
 CostT minCost(const Function& f, unordered_map<const BasicBlock*, CostT> bbCost) {
     // Cost of best path (path with minimum cost)
-    CostT best = numeric_limits<CostT>::infinity(); 
+    CostT best = numeric_limits<CostT>::infinity();
+    // The exit block with the best path cost
+    const BasicBlock* bestBB = nullptr;
+    // Predecessors
+    unordered_map<const BasicBlock*, const BasicBlock*> pred;
     // Map of costs into each vertex
     unordered_map<const BasicBlock*, CostT> costIn;
     // Priority queue
@@ -171,16 +175,25 @@ CostT minCost(const Function& f, unordered_map<const BasicBlock*, CostT> bbCost)
                 // Insert into the queue (and remember iterator)
                 auto iti = q.insert({cOut, succ});
                 iter[succ] = iti.first;
+                // Remember predecessor
+                pred[succ] = v;
             }
         }
         // Update best if this is an exit block (no successors) and we have a better cost
-        if(numSuccs == 0 && best > cOut) best = cOut;
+        if(numSuccs == 0 && best > cOut) {
+            best = cOut;
+            bestBB = v;
+        }
     }
     return best;
 }
 CostT maxCost(const Function& f, unordered_map<const BasicBlock*, CostT> bbCost) {
     // Cost of best path (path with minimum cost)
-    CostT best = 0; 
+    CostT best = 0;     
+    // The exit block with the best path cost
+    const BasicBlock* bestBB = nullptr;
+    // Predecessors
+    unordered_map<const BasicBlock*, const BasicBlock*> pred;
     // Map of costs into each vertex
     unordered_map<const BasicBlock*, CostT> costIn;
     // Priority queue
@@ -201,7 +214,6 @@ CostT maxCost(const Function& f, unordered_map<const BasicBlock*, CostT> bbCost)
     auto iti = q.insert({costIn[start], start});
     iter[start] = iti.first;
     // Do the search
-    //cout << f.getName().str() << endl;
     while(!q.empty()) {
         // Pop from the q
         auto top = q.begin();
@@ -213,32 +225,32 @@ CostT maxCost(const Function& f, unordered_map<const BasicBlock*, CostT> bbCost)
 
         // Get the cost out of this node
         int cOut = cIn + bbCost[v];
-        //cout << v << " " << cIn << " " << cOut << endl;
         // Count the successors as we process them
         int numSuccs = 0;
         // Process each successor
         for(const auto* succ: successors(v)) {
             numSuccs++;
             // Update if the cost is better
-            //cout << "   " << cOut << " " << costIn[succ] << " " << succ << endl;
             if(cOut > costIn[succ]) {
                 // Set the new cost
                 costIn[succ] = cOut;
                 // Delete from the queue if already in there
                 if(iter.count(succ)) {
-                    //cout << "  x\n";
                     auto it = iter[succ];
                     q.erase(it);
                 }
                 // Insert into the queue (and remember iterator)
                 auto iti = q.insert({cOut, succ});
                 iter[succ] = iti.first;
-                //cout << "   insert? " << iti.second << endl;
+                // Remember predecessor
+                pred[succ] = v;
             }
         }
         // Update best if this is an exit block (no successors) and we have a better cost
-        if(numSuccs == 0 && best < cOut) best = cOut;
-        //cout << numSuccs << " " << best << " " << cIn << " " << cOut << " " << q.size() << endl;
+        if(numSuccs == 0 && best < cOut) {
+            best = cOut;
+            bestBB = v;
+        }
     }
     return best;
 }
