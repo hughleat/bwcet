@@ -4,7 +4,7 @@ A really dumb best/worst case execution time estimation tool.
 The tool uses LLVM's cost model to give estimates of best and worst case execution time for very, very simple cases. 
 You pass it a list of bitcode files and it will compute b/wcet for every function in each module.
 
-The huge, enormous caveat is that it only works for DAG like code which doesn't call other functions! That, right there, should probably put you off. 
+The huge, enormous caveat is that it only works for DAG like code which doesn't call other functions! That, right there, should probably put you off. (Actually, it will try to give the best case estimates for non DAGs, but will assume infinite for the worst.)
 Additionally, the estimate works by just asking LLVM for the cost of each instruction and summing the best and worst case paths through the CFG. This ignores all scheduling, cache effects, etc.
 These are the reasons it is a 'dumb' tool. I needed it for a particular task.
 
@@ -46,12 +46,14 @@ The command line options are:
 ## Output
 Sample output:
 
-    build/BWCET build/foo-O0.ll build/foo-O3.ll -k latency
+    build/BWCET build/foo-O0.ll build/foo-O3.ll build/large-O0.ll -k latency
     Module: build/foo-O0.ll
-      Function: foo - {min:12,max:12}
-      Function: Config1Setting157574 - {min:12,max:118}
-      Function: loopy - CFG not a DAG
+      Function: foo min=12 max=12
+      Function: Config1Setting157574 min=19 max=118
+      Function: loopy min=20 max=inf
     Module: build/foo-O3.ll
-      Function: foo - {min:2,max:2}
-      Function: Config1Setting157574 - {min:8,max:24}
-      Function: loopy - CFG not a DAG
+      Function: foo min=2 max=2
+      Function: Config1Setting157574 min=9 max=24
+      Function: loopy min=3 max=inf
+    Module: build/large-O0.ll
+      Function: aLargeFunction min=30 max=952263
