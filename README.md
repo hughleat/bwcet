@@ -25,7 +25,9 @@ Test on a big function compiled with -O3 (it takes LLVM ages to do this, so it i
 
     make test-large-O3
 
-#### Windows
+#### Non Mac Machines
+I have only tested this on my Macbook, running MacOS Catalina. YMMV.
+
 There might be some issues on Windows machines (I haven't used one for a long time). I copied most of my build from [`llvm-tutor`](https://github.com/banach-space/llvm-tutor). In his `HelloWorld` directory, there is a [file](https://github.com/banach-space/llvm-tutor/blob/master/HelloWorld/CMakeLists.txt_for_windows) which might have useful info. Also his [README](https://github.com/banach-space/llvm-tutor/blob/master/README.md) might be useful.
 
 ## Use
