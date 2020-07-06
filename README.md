@@ -25,10 +25,7 @@ Test on a big function compiled with -O3 (it takes LLVM ages to do this, so it i
 
     make test-large-O3
 
-#### Non Mac Machines
-I have only tested this on my Macbook, running MacOS Catalina. YMMV.
-
-There might be some issues on Windows machines (I haven't used one for a long time). I copied most of my build from [`llvm-tutor`](https://github.com/banach-space/llvm-tutor). In his `HelloWorld` directory, there is a [file](https://github.com/banach-space/llvm-tutor/blob/master/HelloWorld/CMakeLists.txt_for_windows) which might have useful info. Also his [README](https://github.com/banach-space/llvm-tutor/blob/master/README.md) might be useful.
+Some help for Windows machines is at the bottom of this page.
 
 ## Use
 The command line options are:
@@ -74,3 +71,41 @@ Sample output:
       Function: loopy min=3 max=inf
     Module: build/large-O0.ll
       Function: aLargeFunction min=30 max=952263
+
+#### Non Mac Machines
+I have only tested this on my Macbook, running MacOS Catalina. YMMV.
+
+There might be some issues on Windows machines (I haven't used one for a long time). I copied most of my build from [`llvm-tutor`](https://github.com/banach-space/llvm-tutor). In his `HelloWorld` directory, there is a [file](https://github.com/banach-space/llvm-tutor/blob/master/HelloWorld/CMakeLists.txt_for_windows) which might have useful info. Also his [README](https://github.com/banach-space/llvm-tutor/blob/master/README.md) might be useful.
+
+My friend, Chad, got this working on his Windows machine. Here are the steps he took, verbatim.
+
+1. mkdir Foo
+2. cd Foo
+3. git clone --config core.autocrlf=false https://github.com/llvm/llvm-project.git
+4. cd llvm-project
+5. mkdir build
+6. cd build
+7. cmake -G “Visual Studio 16 2019” ..\llvm
+8. cmake --build .
+    - NOTE this builds the DEBUG version…
+9. mkdir Foo\llvm-project\BwCet
+10. git clone --config core.autocrlf=false https://github.com/hughleat/bwcet.git
+
+11. Change this line in Foo\llvm-project\BwCet\CMakeLists.txt
+    - set(LT_LLVM_INSTALL_DIR "" CACHE PATH "LLVM installation directory")
+    - TO
+    - set(LT_LLVM_INSTALL_DIR "Foo/llvm-project/build")
+    - NOTE: change ‘\’ to ‘/’ in the path!!
+12. cd into Foo\llvm-project\BwCet
+13. In Foo\llvm-project\BwCet\cmakelists.txt change
+    - find_package(LLVM 10.0.0 REQUIRED CONFIG)
+    - TO
+    - find_package(LLVM 11.0.0 REQUIRED CONFIG)
+14. Comment out these lines
+    - \#if (${SUPPORTS_FVISIBILITY_INLINES_HIDDEN_FLAG} EQUALS "1")
+    - \#  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden")
+    - \#endif()
+15. cmake -G “Visual Studio 16 2019” ..\llvm
+16. cmake --build .
+17. The binary will be in foo\llvm-project\bwcet\bin\debug\bwcet.exe
+
